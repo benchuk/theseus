@@ -38,62 +38,80 @@ var http = require('http'),
 
 var proxy = new httpProxy.RoutingProxy();
 
+if ( !String.prototype.contains ) {
+ String.prototype.contains = function() {
+  return String.prototype.indexOf.apply( this, arguments ) !== -1;
+ };
+}
+
 module.exports = function (root, options) {
-  return function (req, res, next) {
-    var buffer = httpProxy.buffer(req);
+ return function (req, res, next) {
+  if(req.url.contains("public"))//LivePreview send the real full path - redirect with out public
+  {
+   var modifiedUrl = req.url.replace("/public","");
+   var fullURL = "http" + "://" + req.headers.host + modifiedUrl;
 
-    var _process = false;
-    var _contentType;
-    var _code, _headers;
-    var _content = '';
-
-    var _writeHead = res.writeHead;
-    res.writeHead = function (code, headers) {
-      _contentType = (headers['content-type'] || '').split(";")[0];
-      _process = options.accept(req, _contentType);
-      if (_process) {
-        _code = code;
-        _headers = headers;
-      } else {
-        _writeHead.apply(res, arguments);
-      }
-    };
-
-    var _write = res.write;
-    res.write = function (data) {
-      if (_process) {
-        _content += data.toString();
-      } else {
-        _write.call(res, data);
-      }
-    }
-
-    var _end = res.end;
-    res.end = function () {
-      if (_process) {
-        var processedContent = options.filter(req, undefined, _contentType, _content);
-        _headers['content-length'] = Buffer.byteLength(processedContent, 'utf8');
-        _writeHead.call(res, _code, _headers);
-        _write.call(res, processedContent);
-      }
-      _end.apply(res, arguments);
-    }
-
-    proxy.proxyRequest(req, res, {
-      port: 3000,
-      host: 'localhost',
-      buffer: buffer
-    });
+   res.writeHead(302, {
+    'Location': fullURL
+    //add other headers here...
+   });
+   res.end();
+   return;
   }
+  var buffer = httpProxy.buffer(req);
+
+  var _process = false;
+  var _contentType;
+  var _code, _headers;
+  var _content = '';
+
+  var _writeHead = res.writeHead;
+  res.writeHead = function (code, headers) {
+   _contentType = (headers['content-type'] || '').split(";")[0];
+   _process = options.accept(req, _contentType);
+   if (_process) {
+    _code = code;
+    _headers = headers;
+   } else {
+    _writeHead.apply(res, arguments);
+   }
+  };
+
+  var _write = res.write;
+  res.write = function (data) {
+   if (_process) {
+    _content += data.toString();
+   } else {
+    _write.call(res, data);
+   }
+  }
+
+  var _end = res.end;
+  res.end = function () {
+   if (_process) {
+    var processedContent = options.filter(req, undefined, _contentType, _content);
+    _headers['content-length'] = Buffer.byteLength(processedContent, 'utf8');
+    _writeHead.call(res, _code, _headers);
+    _write.call(res, processedContent);
+   }
+   _end.apply(res, arguments);
+  }
+
+  proxy.proxyRequest(req, res, {
+   port: 3000,
+   host: 'localhost',
+   buffer: buffer
+  });
+ }
 }
 
 proxy.on('proxyError', function (err, req, res) {
-  res.writeHead(500, { 'Content-Type': 'text/plain' });
+ res.writeHead(500, { 'Content-Type': 'text/plain' });
 
-  if (req.method !== 'HEAD') {
-    res.write('An error has occurred (have you started a server on port 3000?): ' + JSON.stringify(err));
-  }
+ if (req.method !== 'HEAD') {
+  res.write('An error has occurred (have you started a server on port 3000?): ' + JSON.stringify(err));
+ }
 
-  try { res.end() }
-  catch (ex) { console.error("res.end error: %s", ex.message) }
+ try { res.end() }
+ catch (ex) { console.error("res.end error: %s", ex.message) }
 });
